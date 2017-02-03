@@ -14,7 +14,7 @@ import com.gu.stripe.Stripe.Charge
 import com.gu.stripe.Stripe.Serializer._
 import com.typesafe.config.Config
 import cookies.ContribTimestampCookieAttributes
-import models.{ContributionId, IdentityId, SavedContributionData, StripeHook}
+import models._
 import org.joda.time.DateTime
 import play.api.Logger
 import play.api.data.{Form, FormError}
@@ -29,7 +29,7 @@ import views.support.Test
 import scala.concurrent.{ExecutionContext, Future}
 
 class StripeController(paymentServices: PaymentServices, stripeConfig: Config)(implicit ec: ExecutionContext)
-  extends Controller {
+  extends Controller with Redirect {
   import ContribTimestampCookieAttributes._
 
   implicit val currencyFormatter = new Formatter[Currency] {
@@ -90,7 +90,7 @@ class StripeController(paymentServices: PaymentServices, stripeConfig: Config)(i
     )(SupportForm.apply)(SupportForm.unapply)
   )
 
-  def pay = NoCacheAction.async(parse.form(supportForm)) { implicit request =>
+  def pay = (NoCacheAction andThen MobileSupportAction).async(parse.form(supportForm)) { implicit request =>
 
     val form = request.body
 
@@ -129,7 +129,11 @@ class StripeController(paymentServices: PaymentServices, stripeConfig: Config)(i
     val maxAmountInSmallestCurrencyUnit = MaxAmount.forCurrency(form.currency) * 100
     val amount = min(maxAmountInSmallestCurrencyUnit, amountInSmallestCurrencyUnit)
 
-    val redirect = routes.Contributions.thanks(countryGroup).url
+    def thankYouUri = if (request.isMobile) {
+      thankYouMobileUri(ContributionAmount(BigDecimal(amount, 2), form.currency))
+    } else {
+      routes.Contributions.thanks(countryGroup).url
+    }
 
     def createCharge: Future[Stripe.Charge] = {
       stripe.Charge.create(amount, form.currency, form.email, "Your contribution", form.token, metadata)
@@ -156,7 +160,7 @@ class StripeController(paymentServices: PaymentServices, stripeConfig: Config)(i
 
     createCharge.map { charge =>
       storeMetaData(charge) // fire and forget. If it fails we don't want to stop the user
-      Ok(Json.obj("redirect" -> redirect))
+      Ok(Json.obj("redirect" -> thankYouUri))
         .withSession("charge_id" -> charge.id)
         .setCookie[ContribTimestampCookieAttributes](Instant.ofEpochSecond(charge.created).toString)
     }.recover {

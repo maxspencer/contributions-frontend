@@ -22,7 +22,7 @@ class Contributions(paymentServices: PaymentServices, addToken: CSRFAddToken) ex
     Facebook("https://contribute.theguardian.com/?INTCMP=social")
   )
 
-  def contributeRedirect = NoCacheAction { implicit request =>
+  def contributeRedirect = (NoCacheAction andThen MobileSupportAction) { implicit request =>
 
     val countryGroup = request.getFastlyCountry match {
       case Some(Canada) | Some(NewZealand) | Some(RestOfTheWorld) => UK
@@ -33,7 +33,7 @@ class Contributions(paymentServices: PaymentServices, addToken: CSRFAddToken) ex
     redirectWithQueryParams(routes.Contributions.contribute(countryGroup).url)
   }
 
-  def redirectToUk = NoCacheAction { implicit request => redirectWithQueryParams(routes.Contributions.contribute(UK).url) }
+  def redirectToUk = (NoCacheAction andThen MobileSupportAction) { implicit request => redirectWithQueryParams(routes.Contributions.contribute(UK).url) }
 
   private def redirectWithQueryParams(destinationUrl: String)(implicit request: Request[Any]) = redirectWithCampaignCodes(destinationUrl, Set("mcopy", "skipAmount", "highlight"))
 
@@ -50,7 +50,7 @@ class Contributions(paymentServices: PaymentServices, addToken: CSRFAddToken) ex
   }
 
   def contribute(countryGroup: CountryGroup, error: Option[PaymentError] = None) = addToken {
-    NoCacheAction { implicit request =>
+    (NoCacheAction andThen MobileSupportAction) { implicit request =>
 
       val mvtId = Test.testIdFor(request)
       val variant = Test.getContributePageVariant(countryGroup, mvtId, request)
